@@ -3,6 +3,7 @@
 # 与 suly_visualization.R 相同的三图可视化，但先对每个扫描做强度标准化：
 #   median 版: x / median(脑内非零体素) - 1   -> 脑内中位数处 = 0
 #   mean   版: x / mean(脑内非零体素)   - 1   -> 脑内均值处   = 0
+#   zscore 版: (x - mean) / sd (脑内非零体素) -> 单位为标准差
 # 统计量按每个扫描各自计算；脑外 (原始值 0) 设为 NA。
 #
 # 色标: 蓝 (负, 比参考值暗) - 白 (0) - 红 (正, 比参考值亮)，脑外浅灰。
@@ -11,6 +12,7 @@
 # 输出目录结构与 viz_png 一致:
 #   SuLY_EDA/viz_png_standardized_median/<subject>/<magnet>/<param>/
 #   SuLY_EDA/viz_png_standardized_mean/<subject>/<magnet>/<param>/
+#   SuLY_EDA/viz_png_z_score/<subject>/<magnet>/<param>/
 #     - <scan>_three_views.png     sagittal / coronal / axial 三正交中间层
 #     - <scan>_axial_montage.png   axial 方向多层拼图 (montage)
 #     - <scan>_mip_axis3.png       沿 axis 3 的最大强度投影 (MIP)
@@ -19,6 +21,8 @@
 #   Rscript suly_visualization_standardized.R                   # 全量, median + mean
 #   Rscript suly_visualization_standardized.R sub-0011          # 只跑一个被试
 #   Rscript suly_visualization_standardized.R "*" median        # 只跑 median 版
+#   Rscript suly_visualization_standardized.R "*" zscore        # 只跑 z-score 版
+# 数据不在 <项目根>/SuLY-MPRAGE-Handoff 时，用环境变量 SULY_DATA_DIR 指定。
 # ============================================================
 
 suppressPackageStartupMessages({
@@ -36,16 +40,18 @@ proj_dir <- if (length(script_arg) == 1) {
 } else {
   "C:/Users/yaoya/OneDrive - CUHK-Shenzhen/桌面/Huaxi"
 }
-data_dir <- file.path(proj_dir, "SuLY-MPRAGE-Handoff")
+data_dir <- Sys.getenv("SULY_DATA_DIR", file.path(proj_dir, "SuLY-MPRAGE-Handoff"))
 eda_dir  <- file.path(proj_dir, "SuLY_EDA")
 
 args    <- commandArgs(trailingOnly = TRUE)
 subpat  <- if (length(args) >= 1) args[1] else "*"
 methods <- if (length(args) >= 2) args[2] else c("median", "mean")
-stopifnot(all(methods %in% c("median", "mean")))
+stopifnot(all(methods %in% c("median", "mean", "zscore")))
 
-out_dirs <- setNames(file.path(eda_dir, paste0("viz_png_standardized_", methods)),
-                     methods)
+out_names <- c(median = "viz_png_standardized_median",
+               mean   = "viz_png_standardized_mean",
+               zscore = "viz_png_z_score")
+out_dirs <- setNames(file.path(eda_dir, out_names[methods]), methods)
 
 files <- Sys.glob(file.path(data_dir, subpat, "*", "*", "*", "*", "*.nii.gz"))
 files <- files[!dir.exists(files)]
@@ -122,12 +128,19 @@ brain_range <- function(vol, axis = 3) {
 
 # 新增：按脑内 (非零、有限) 体素的中位数或均值做比值标准化，再减 1
 #   0 = 等于参考值, 0.3 = 比参考值高 30%, -0.5 = 低 50%
+# zscore: (x - mean) / sd, 0 = 脑内均值, 1 = 高一个标准差
 # 脑外 (原始值 = 0) 设为 NA，画成灰色背景
-standardize <- function(arr, method = c("median", "mean")) {
+standardize <- function(arr, method = c("median", "mean", "zscore")) {
   method <- match.arg(method)
   inside <- arr > 0 & is.finite(arr)
-  ref <- switch(method, median = median(arr[inside]), mean = mean(arr[inside]))
-  out <- arr / ref - 1
+  b <- arr[inside]
+  if (method == "zscore") {
+    ref <- c(mean = mean(b), sd = sd(b))
+    out <- (arr - ref[["mean"]]) / ref[["sd"]]
+  } else {
+    ref <- switch(method, median = median(b), mean = mean(b))
+    out <- arr / ref - 1
+  }
   out[!inside] <- NA
   list(arr = out, ref = ref)
 }
@@ -312,7 +325,12 @@ for (i in seq_along(files)) {
 
     st    <- standardize(raw, m)
     arr   <- st$arr
-    label <- sprintf("%s\nx/%s - 1 (%s = %.1f)", name, m, m, st$ref)
+    label <- if (m == "zscore") {
+      sprintf("%s\n(x - mean) / sd (mean = %.1f, sd = %.1f)",
+              name, st$ref[["mean"]], st$ref[["sd"]])
+    } else {
+      sprintf("%s\nx/%s - 1 (%s = %.1f)", name, m, m, st$ref)
+    }
 
     file_dir <- file.path(out_dirs[[m]], subject, magnet, param)
     dir.create(file_dir, showWarnings = FALSE, recursive = TRUE)

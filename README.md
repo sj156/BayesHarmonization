@@ -10,7 +10,7 @@ protocol settings Param01–05). Raw `.nii.gz` data is not included.
 |---|---|
 | `00_data_overview.ipynb` | Data overview notes |
 | `suly_visualization.R` | Raw-intensity plots (magma colormap) → `viz_png/` |
-| `suly_visualization_standardized.R` | Per-scan standardized plots, `x / median(brain) - 1` or `x / mean(brain) - 1`, blue–white–red → `viz_png_standardized_median/`, `viz_png_standardized_mean/` |
+| `suly_visualization_standardized.R` | Per-scan standardized plots, `x / median(brain) - 1` or `x / mean(brain) - 1`, blue–white–red → `viz_png_standardized_median/`, `viz_png_standardized_mean/`; with method `zscore`, `(x - mean(brain)) / sd(brain)` → `viz_png_z_score/` |
 
 Each output folder is organized as `<subject>/<scanner>/<param>/` and holds three
 plots per scan: `_three_views.png` (mid-slice sagittal/coronal/axial),
@@ -20,5 +20,8 @@ Scripts expect the data at `../SuLY-MPRAGE-Handoff/` relative to `SuLY_EDA/`:
 
 ```
 Rscript SuLY_EDA/suly_visualization.R [sub-XXXX]
-Rscript SuLY_EDA/suly_visualization_standardized.R [sub-XXXX] [median|mean]
+Rscript SuLY_EDA/suly_visualization_standardized.R [sub-XXXX] [median|mean|zscore]
 ```
+
+If the data lives elsewhere, set the environment variable `SULY_DATA_DIR` to the
+`SuLY-MPRAGE-Handoff` folder.
